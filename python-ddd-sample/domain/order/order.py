@@ -8,8 +8,16 @@ from typing import List, Optional, Dict
 from .order_id import OrderId
 from .product_id import ProductId
 from .order_item import OrderItem
+from .order_events import (
+    OrderCreatedEvent,
+    OrderItemAddedEvent,
+    OrderPlacedEvent,
+    OrderCancelledEvent,
+    OrderShippedEvent
+)
 from ..customer.customer_id import CustomerId
 from ..shared.money import Money
+from ..shared.aggregate_root import AggregateRoot
 
 
 class OrderStatus(Enum):
@@ -22,7 +30,7 @@ class OrderStatus(Enum):
     CANCELLED = 'CANCELLED'
 
 
-class Order:
+class Order(AggregateRoot):
     """注文集約のルートエンティティ"""
     
     MAX_ITEMS = 100
@@ -35,6 +43,7 @@ class Order:
             order_id: 注文ID
             customer_id: 顧客ID
         """
+        super().__init__()  # AggregateRootの初期化
         self._id = order_id
         self._customer_id = customer_id
         self._items: List[OrderItem] = []
@@ -45,7 +54,15 @@ class Order:
     @classmethod
     def create(cls, customer_id: CustomerId) -> 'Order':
         """新規注文を作成"""
-        return cls(OrderId.generate(), customer_id)
+        order = cls(OrderId.generate(), customer_id)
+        
+        # イベント発行: 注文が作成された
+        order.add_domain_event(OrderCreatedEvent(
+            aggregate_id=str(order._id),
+            customer_id=str(customer_id)
+        ))
+        
+        return order
     
     def add_item(self, product_id: ProductId, quantity: int, unit_price: Money) -> None:
         """
@@ -68,6 +85,14 @@ class Order:
         else:
             new_item = OrderItem(product_id, quantity, unit_price)
             self._items.append(new_item)
+            
+            # イベント発行: 商品が追加された
+            self.add_domain_event(OrderItemAddedEvent(
+                aggregate_id=str(self._id),
+                product_id=str(product_id),
+                quantity=quantity,
+                unit_price=unit_price.amount
+            ))
         
         self._recalculate_total()
     
@@ -103,6 +128,25 @@ class Order:
         
         self._status = OrderStatus.PLACED
         self._placed_at = datetime.now()
+        
+        # イベント発行: 注文が確定された
+        items_data = [
+            {
+                'product_id': str(item.product_id),
+                'quantity': item.quantity,
+                'unit_price': item.unit_price.amount,
+                'subtotal': item.subtotal.amount
+            }
+            for item in self._items
+        ]
+        
+        self.add_domain_event(OrderPlacedEvent(
+            aggregate_id=str(self._id),
+            customer_id=str(self._customer_id),
+            total_amount=self._total_amount.amount,
+            items=items_data,
+            placed_at=self._placed_at
+        ))
     
     def mark_as_paid(self) -> None:
         """支払い完了"""
@@ -125,12 +169,20 @@ class Order:
         
         self._status = OrderStatus.DELIVERED
     
-    def cancel(self) -> None:
+    def cancel(self, reason: str = "") -> None:
         """キャンセル"""
         if self._status in [OrderStatus.SHIPPED, OrderStatus.DELIVERED, OrderStatus.CANCELLED]:
             raise ValueError('この注文はキャンセルできません')
         
         self._status = OrderStatus.CANCELLED
+        
+        # イベント発行: 注文がキャンセルされた
+        self.add_domain_event(OrderCancelledEvent(
+            aggregate_id=str(self._id),
+            customer_id=str(self._customer_id),
+            reason=reason,
+            cancelled_at=datetime.now()
+        ))
     
     def _find_item(self, product_id: ProductId) -> Optional[OrderItem]:
         """商品を検索（内部メソッド）"""
