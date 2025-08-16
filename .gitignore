@@ -1,0 +1,49 @@
+# TypeScript / Node.js
+node_modules/
+dist/
+build/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+.eslintcache
+.cache/
+
+# Framework outputs (optional)
+.next/
+out/
+.vite/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage*
+htmlcov/
+.tox/
+
+# Python environments
+.venv/
+venv/
+env/
+.env
+.env.*
+.python-version
+
+# OS / Editors
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+
