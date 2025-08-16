@@ -12,12 +12,20 @@ from domain.customer.customer_id import CustomerId
 class InMemoryOrderRepository(OrderRepository):
     """インメモリ実装の注文リポジトリ"""
     
-    def __init__(self):
+    def __init__(self, event_bus=None):
         self._orders: Dict[str, Order] = {}
+        self._event_bus = event_bus  # イベントバスの注入
     
     async def save(self, order: Order) -> None:
         """注文を保存"""
+        # 1. 集約を永続化
         self._orders[str(order.id)] = order
+        
+        # 2. 蓄積されたイベントを配信
+        if self._event_bus:
+            events = order.pull_domain_events()
+            for event in events:
+                await self._event_bus.publish(event)
     
     async def find_by_id(self, order_id: OrderId) -> Optional[Order]:
         """IDで注文を検索"""
